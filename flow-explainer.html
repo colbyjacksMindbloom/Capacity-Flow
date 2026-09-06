@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How the Clinician Capacity Flow Model works</title>
+<style>
+:root { color-scheme: light; --ink:#1b1f24; --mute:#5b6470; --line:#d9dee5; --bg:#ffffff; --panel:#f5f7fa;
+  --committed:#3b4b63; --new:#3f8cff; --free:#dfe7f2; --unmet:#d93025; --ok:#2e9e5b; --warn:#e8a317; --hot:#e0622a; }
+* { box-sizing:border-box; }
+body { margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; color:var(--ink); background:var(--bg); }
+header { padding:22px 28px 10px; border-bottom:1px solid var(--line); }
+header h1 { margin:0 0 4px; font-size:20px; font-weight:650; letter-spacing:-0.01em; }
+header p { margin:0; color:var(--mute); font-size:14px; }
+.wrap { display:grid; grid-template-columns: 1fr 380px; gap:0; min-height:560px; }
+.stage { position:relative; padding:18px 24px; border-right:1px solid var(--line); }
+.panel { padding:22px 26px; background:var(--panel); display:flex; flex-direction:column; }
+.panel h2 { margin:0 0 10px; font-size:17px; font-weight:650; }
+.panel p { margin:0 0 10px; font-size:14px; line-height:1.5; }
+.panel .rule { background:#fff; border:1px solid var(--line); border-radius:8px; padding:10px 12px; font-size:13px; line-height:1.5; margin:8px 0 12px; }
+.panel .rule b { font-weight:650; }
+.nav { margin-top:auto; display:flex; align-items:center; gap:10px; padding-top:14px; }
+.nav button { border:1px solid var(--line); background:#fff; padding:8px 14px; border-radius:8px; font-size:14px; cursor:pointer; }
+.nav button:hover { background:#eef2f7; }
+.nav button:disabled { opacity:.4; cursor:default; }
+.dots { display:flex; gap:6px; margin-left:auto; }
+.dots span { width:8px; height:8px; border-radius:50%; background:var(--line); cursor:pointer; }
+.dots span.on { background:var(--ink); }
+.stepnum { font-size:12px; color:var(--mute); text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px; }
+
+/* diagram */
+#diagram { position:relative; width:100%; max-width:760px; height:470px; margin:0 auto; }
+#links { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+.state { position:absolute; left:0; width:170px; border:1px solid var(--line); border-radius:10px; background:#fff; padding:10px 12px; transition:opacity .4s; }
+.state .nm { font-weight:650; font-size:15px; }
+.state .dm { font-size:12.5px; color:var(--mute); margin-top:2px; }
+.state .unmet { display:inline-block; margin-top:6px; font-size:12px; font-weight:650; color:#fff; background:var(--unmet); padding:2px 7px; border-radius:6px; opacity:0; transform:scale(.9); transition:all .4s; }
+.state .unmet.show { opacity:1; transform:scale(1); }
+.state .util { font-size:12px; margin-top:6px; color:var(--mute); opacity:0; transition:opacity .4s; }
+.state .util.show { opacity:1; }
+.state .util b { font-weight:650; }
+.clin { position:absolute; left:330px; width:420px; height:58px; }
+.clin .nm { font-size:13.5px; font-weight:600; display:flex; justify-content:space-between; align-items:baseline; }
+.clin .nm small { font-weight:400; color:var(--mute); font-size:12px; }
+.bar { position:relative; height:22px; margin-top:6px; background:var(--free); border-radius:5px; overflow:hidden; border:1px solid #cdd6e2; transition:width .6s ease; }
+.seg { position:absolute; top:0; bottom:0; left:0; transition:width .7s ease, left .7s ease; }
+.seg.c { background:var(--committed); }
+.seg.n { background:var(--new); }
+.clin .lbl { font-size:11.5px; color:var(--mute); margin-top:3px; display:flex; gap:12px; }
+.clin .lbl span b { color:var(--ink); font-weight:600; }
+.clin.full .bar { box-shadow:0 0 0 2px var(--unmet); }
+.legend { position:absolute; right:0; bottom:0; display:flex; gap:14px; font-size:12px; color:var(--mute); }
+.legend i { display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-2px; margin-right:5px; border:1px solid #cdd6e2; }
+.fade { opacity:.35; }
+.hidden { display:none !important; }
+
+/* levers */
+.levers { margin:6px 0 10px; display:flex; flex-direction:column; gap:6px; }
+.lever { display:flex; align-items:center; gap:10px; font-size:13px; background:#fff; border:1px solid var(--line); border-radius:8px; padding:7px 10px; cursor:pointer; user-select:none; }
+.lever input { margin:0; }
+.lever .tag { margin-left:auto; font-size:11px; color:var(--mute); border:1px solid var(--line); border-radius:5px; padding:1px 6px; }
+table.cmp { width:100%; border-collapse:collapse; font-size:13px; background:#fff; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+table.cmp th, table.cmp td { padding:6px 8px; text-align:right; border-bottom:1px solid var(--line); }
+table.cmp th:first-child, table.cmp td:first-child { text-align:left; }
+table.cmp tr:last-child td { border-bottom:none; }
+.up { color:var(--unmet); font-weight:650; } .down { color:var(--ok); font-weight:650; }
+
+/* months strip */
+.months { display:flex; gap:10px; align-items:flex-end; height:170px; padding:10px 0 0; }
+.mo { flex:1; text-align:center; font-size:12px; color:var(--mute); }
+.mo .col { position:relative; height:120px; background:var(--free); border-radius:6px; border:1px solid #cdd6e2; overflow:hidden; }
+.mo .col .c { position:absolute; left:0; right:0; bottom:0; background:var(--committed); }
+.mo .col .n { position:absolute; left:0; right:0; background:var(--new); }
+.mo .col .u { position:absolute; left:0; right:0; top:0; background:repeating-linear-gradient(45deg,#f7c4bf 0 4px,#fbe3e0 4px 8px); }
+.mo .cap { font-size:11px; margin-top:4px; }
+.carry { font-size:12px; color:var(--mute); margin-top:8px; }
+
+/* real network */
+.real { display:grid; grid-template-columns: 1fr 1fr; gap:18px; height:100%; }
+.real h3 { margin:0 0 8px; font-size:13.5px; font-weight:650; }
+.bars { font-size:12px; }
+.brow { display:grid; grid-template-columns: 34px 1fr 1fr 44px; gap:6px; align-items:center; margin-bottom:3px; }
+.brow .b { height:12px; border-radius:3px; }
+.brow .b.base { background:#c7cfdb; }
+.brow .b.plan { background:var(--unmet); }
+.brow .chip { text-align:center; border-radius:4px; font-size:11px; padding:1px 0; color:#fff; }
+.stress { font-size:12.5px; border-collapse:collapse; width:100%; }
+.stress th, .stress td { border-bottom:1px solid var(--line); padding:5px 6px; text-align:left; vertical-align:top; }
+.stress th { font-weight:650; }
+.small { font-size:12px; color:var(--mute); }
+</style>
+</head>
+<body>
+<header>
+  <h1>How the Clinician Capacity Flow Model works</h1>
+  <p>One question: if sales rise, which new clients will not find a clinician, in which state, in which month, and what is the cheapest fix once the network effect is counted?</p>
+</header>
+
+<div class="wrap">
+  <div class="stage">
+    <div id="diagram">
+      <svg id="links"></svg>
+      <div id="states"></div>
+      <div id="clins"></div>
+      <div class="legend"><span><i style="background:var(--committed)"></i>existing clients</span><span><i style="background:var(--new)"></i>new clients placed</span><span><i style="background:var(--free)"></i>free hours</span></div>
+    </div>
+    <div id="monthsView" class="hidden"></div>
+    <div id="realView" class="hidden"></div>
+  </div>
+
+  <div class="panel">
+    <div class="stepnum" id="stepnum"></div>
+    <div id="panelBody"></div>
+    <div class="nav">
+      <button id="prev">Back</button>
+      <button id="next">Next</button>
+      <div class="dots" id="dots"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------- Toy network (November values from Flow_clinicians, rounded; demand illustrative) ----------
+const CL = [
+  {id:'seldeen', name:'Richard Seldeen', cap:115, com:65, states:['TX','KY','CA']},
+  {id:'burns',   name:'Cristy Burns',    cap:55,  com:20, states:['TX']},
+  {id:'nance',   name:'Lara Nance',      cap:105, com:52, states:['TX'], note:'also AZ, FL, OR, VA (not shown)'},
+  {id:'stills',  name:'Misty Stills',    cap:90,  com:50, states:['CA'], note:'also NJ, WA (not shown)'},
+  {id:'mcgee',   name:'Elizabeth McGee', cap:110, com:35, states:['CA'], note:'also IN (not shown)'},
+];
+const ST = [
+  {id:'TX', name:'Texas',      demand:70},
+  {id:'KY', name:'Kentucky',   demand:60},
+  {id:'CA', name:'California', demand:120},
+];
+const PX = 2.6; // px per hour
+const levers = { seldeenTX:false, seldeenCA:false, seldeenHrs:false, hireKY:false };
+
+function simulate(lv) {
+  const clins = CL.map(c => ({...c, cap:c.cap, free:c.cap - c.com, placed:{}}));
+  if (lv.seldeenHrs) { const s = clins.find(c=>c.id==='seldeen'); s.cap += 18; s.free += 18; }
+  if (lv.hireKY) clins.push({id:'hire', name:'New hire, Kentucky', cap:55, com:0, free:55, states:['KY'], placed:{}});
+  const on = (c, s) => c.states.includes(s) && !(lv.seldeenTX && c.id==='seldeen' && s==='TX') && !(lv.seldeenCA && c.id==='seldeen' && s==='CA');
+  const rem = Object.fromEntries(ST.map(s => [s.id, s.demand]));
+  for (let it=0; it<120; it++) {
+    for (const s of ST) {
+      if (rem[s.id] < 0.01) continue;
+      const el = clins.filter(c => on(c, s.id) && c.free > 0.01);
+      if (!el.length) continue;
+      const tot = el.reduce((a,c)=>a+c.free,0);
+      const take = Math.min(rem[s.id], tot) * 0.5;
+      for (const c of el) { const sh = take * c.free / tot; c.placed[s.id] = (c.placed[s.id]||0) + sh; c.free -= sh; rem[s.id] -= sh; }
+    }
+  }
+  const states = ST.map(s => {
+    const pool = clins.filter(c => on(c, s.id));
+    const cap = pool.reduce((a,c)=>a+c.cap,0);
+    const used = pool.reduce((a,c)=>a + c.com + Object.values(c.placed).reduce((x,y)=>x+y,0),0);
+    return {...s, unmet: rem[s.id], util: cap ? used/cap : 0};
+  });
+  return { clins, states, on };
+}
+
+// ---------- Render toy ----------
+const stateY = {TX:40, KY:200, CA:360};
+function clinY(i) { return 10 + i*88; }
+
+function renderBase() {
+  const sd = document.getElementById('states'); sd.innerHTML='';
+  ST.forEach(s => {
+    sd.insertAdjacentHTML('beforeend', `<div class="state" id="st-${s.id}" style="top:${stateY[s.id]}px">
+      <div class="nm">${s.name}</div>
+      <div class="dm" id="dm-${s.id}">&nbsp;</div>
+      <div class="util" id="ut-${s.id}"></div>
+      <div class="unmet" id="um-${s.id}"></div></div>`);
+  });
+}
+function renderClins(sim, opts) {
+  const cd = document.getElementById('clins'); cd.innerHTML='';
+  sim.clins.forEach((c,i) => {
+    const newH = Object.values(c.placed).reduce((a,b)=>a+b,0);
+    const w = c.cap*PX, cw = opts.showCommitted ? c.com*PX : 0, nw = opts.showNew ? newH*PX : 0;
+    const free = c.cap - (opts.showCommitted?c.com:0) - (opts.showNew?newH:0);
+    const full = opts.showNew && c.free < 0.5;
+    cd.insertAdjacentHTML('beforeend', `<div class="clin ${full?'full':''}" id="cl-${c.id}" style="top:${clinY(i)}px">
+      <div class="nm"><span>${c.name}</span><small>${c.note||''}</small></div>
+      <div class="bar" style="width:${w}px"><div class="seg c" style="width:${cw}px"></div><div class="seg n" style="left:${cw}px;width:${nw}px"></div></div>
+      <div class="lbl"><span>capacity <b>${c.cap}</b> hrs</span>${opts.showCommitted?`<span>existing <b>${Math.round(c.com)}</b></span>`:''}${opts.showNew?`<span>new <b>${Math.round(newH)}</b></span>`:''}<span>free <b>${Math.round(Math.max(0,free))}</b></span></div>
+    </div>`);
+  });
+  document.getElementById('diagram').style.height = Math.max(470, clinY(sim.clins.length)+10) + 'px';
+}
+function renderLinks(sim, opts) {
+  const svg = document.getElementById('links'); svg.innerHTML='';
+  const box = document.getElementById('diagram').getBoundingClientRect();
+  sim.clins.forEach((c,i) => {
+    CL.concat([{id:'hire',states:['KY']}]).find(x=>x.id===c.id); // no-op
+    const y2 = clinY(i) + 32;
+    const allStates = c.id==='hire' ? ['KY'] : CL.find(x=>x.id===c.id).states;
+    allStates.forEach(s => {
+      const on = sim.on(c, s);
+      const y1 = stateY[s] + 42;
+      const placed = c.placed[s] || 0;
+      const w = opts.showNew && on ? Math.max(1.5, placed*0.28) : 1.5;
+      const d = `M170 ${y1} C 250 ${y1}, 250 ${y2}, 330 ${y2}`;
+      svg.insertAdjacentHTML('beforeend', `<path d="${d}" fill="none" stroke="${on ? (opts.showNew && placed>0.5 ? 'var(--new)' : '#b8c2d0') : '#c9d0da'}" stroke-width="${w}" stroke-dasharray="${on?'':'5 5'}" opacity="${on?0.9:0.7}" style="transition:stroke-width .6s"/>`);
+      if (!on) {
+        svg.insertAdjacentHTML('beforeend', `<text x="250" y="${(y1+y2)/2 - 4}" font-size="11" fill="var(--unmet)" text-anchor="middle">IVCs off</text>`);
+      }
+    });
+  });
+}
+function renderStates(sim, opts) {
+  sim.states.forEach(s => {
+    document.getElementById('dm-'+s.id).innerHTML = opts.showDemand ? `${s.demand} hrs of new-client care this month` : '&nbsp;';
+    const um = document.getElementById('um-'+s.id);
+    um.textContent = `${Math.round(s.unmet)} hrs unmet`;
+    um.classList.toggle('show', opts.showUnmet && s.unmet > 0.5);
+    const ut = document.getElementById('ut-'+s.id);
+    ut.innerHTML = `pool utilization <b>${Math.round(s.util*100)}%</b>`;
+    ut.classList.toggle('show', !!opts.showUtil);
+  });
+}
+function draw(opts) {
+  const sim = simulate(levers);
+  renderClins(sim, opts); renderStates(sim, opts); renderLinks(sim, opts);
+  return sim;
+}
+
+// ---------- Steps ----------
+const steps = [
+ { title:'The pieces', view:'toy', opts:{showDemand:false, showCommitted:false, showNew:false},
+   body:`<p>Each <b>state</b> produces new clients every month. Each <b>clinician</b> has a monthly capacity in calendar hours (roster FTE × 40 × 4.345 × 0.85 opened-per-paid).</p>
+   <p>A line connects a state to a clinician when the clinician is licensed there <b>and taking new clients</b> (IVCs on). Most clinicians serve several states; their hours belong to all of them at once.</p>
+   <p class="small">Illustrative slice: three states, five clinicians, November capacities from the roster. The real network is 38 states and 35 clinicians.</p>` },
+ { title:'Existing clients come first', view:'toy', opts:{showDemand:false, showCommitted:true, showNew:false},
+   body:`<p>Clients who already started stay with their clinician. Their remaining hours are <b>committed</b> before any new client is placed.</p>
+   <div class="rule">Committed hours = purchases from the last three months × the hours-per-purchase curve (by week since purchase) × 1.5 for admin, attributed to the clinician who served each client. Future repurchases attach the same way.</div>
+   <p>What is left is <b>free hours</b>. Only free hours can take new clients.</p>` },
+ { title:'New clients arrive', view:'toy', opts:{showDemand:true, showCommitted:true, showNew:false},
+   body:`<p>The forecast says how many purchases land in each state this month. Each new client needs about 1.0 calendar hour in their first month (IVC + first check-in, with admin).</p>
+   <div class="rule">New-client hours per state = forecast purchases × state share (trailing 8 weeks) × first-month hours from the curve.</div>
+   <p>Nobody assigns these clients. They book whatever is open.</p>` },
+ { title:'Clients find open hours', view:'toy', opts:{showDemand:true, showCommitted:true, showNew:true},
+   body:`<p>New clients in a state spread across the clinicians who are taking new clients there, in proportion to <b>who has free hours</b>. A full clinician takes nobody; the rest flows to whoever is still open.</p>
+   <div class="rule"><b>Backtested</b> on August actuals: this rule places 69% of new-client IVC volume with the right clinician, against 45% for "same split as last month."</div>
+   <p>Line thickness = hours placed. Seldeen's free hours are pulled by three states at once.</p>` },
+ { title:'Where it breaks', view:'toy', opts:{showDemand:true, showCommitted:true, showNew:true, showUnmet:true, showUtil:true},
+   body:`<p>Kentucky has one clinician taking new clients. When Seldeen is full, Kentucky's remaining new clients have <b>nowhere to book</b>. That is <b>unmet new-client hours</b>, the model's headline output.</p>
+   <div class="rule"><b>Unmet hours</b> = care new clients wanted and no open clinician existed for. It is a client outcome: zero means every new client found a slot.<br><br><b>Pool utilization</b> = hours used ÷ capacity of the clinicians taking new clients in that state. Above 95% means waits are forming before unmet shows.</div>
+   <p>The old model reported "hours short of an 80% target," a ratio against a policy number. It read Florida red while Florida clients were seen in 3 days. Unmet hours can only be nonzero when a client could not book.</p>` },
+ { title:'Levers, with the network effect', view:'toy', opts:{showDemand:true, showCommitted:true, showNew:true, showUnmet:true, showUtil:true, levers:true},
+   body:`<p>Ops rarely edits calendars. The lever that moves new-client volume is <b>turning IVCs off</b> for one clinician in one state: existing clients stay, new ones stop, and that clinician's free hours go to their other states. Try it.</p>
+   <div class="levers">
+     <label class="lever"><input type="checkbox" data-l="seldeenTX"> Seldeen: IVCs off in Texas <span class="tag">free, immediate</span></label>
+     <label class="lever"><input type="checkbox" data-l="seldeenCA"> Seldeen: IVCs off in California <span class="tag">free, immediate</span></label>
+     <label class="lever"><input type="checkbox" data-l="seldeenHrs"> Seldeen: +5 paid hrs/wk (≈18 hrs/mo) <span class="tag">costs hours</span></label>
+     <label class="lever"><input type="checkbox" data-l="hireKY"> Hire 15 hrs/wk in Kentucky (≈55 hrs/mo) <span class="tag">costs a hire</span></label>
+   </div>
+   <div id="cmp"></div>
+   <p class="small" style="margin-top:8px">Every lever in the real model is re-simulated on all 38 states, so the ranking includes side effects like the California one.</p>` },
+ { title:'Month after month', view:'months',
+   body:`<p>The model runs September through January. Unmet clients do not vanish: <b>70% try again next month</b> and add to that month's demand; 30% are lost past the 15-day cliff.</p>
+   <div class="rule">So a small shortfall in October compounds into November, which is also the seasonal peak. That is why the recommendations are ranked on unmet hours summed <b>October through January</b>, not on one month.</div>
+   <p>Committed hours also roll forward: this month's new clients become next month's existing clients.</p>` },
+ { title:'The real network', view:'real',
+   body:`<p>Same mechanics on 38 states and 35 clinicians. Bars show unmet new-client hours Oct–Jan without the Sep 4 hiring plan (grey) and with it (red). Chips are November pool utilization with the plan.</p>
+   <div class="rule">At forecast, the shortfall sits in sole-clinician states and incumbents' hours fix it. At +20% sales, the gap moves to California, Arizona and Florida, whose pools already run 95–100% in November. Those are hires.</div>
+   <p class="small">Full tables: Flow_grid and Flow_recs in the WIP3 sheet. Method and limits: the Notion page "Clinician Capacity Flow Model: how it works and how to use it."</p>` },
+];
+
+// ---------- Real network data (Flow_grid, 2026-09-05 run) ----------
+const REAL = [{"s":"CA","n":5,"d":145,"ub":0,"uo":1.0,"up":0,"upo":0.986},{"s":"FL","n":6,"d":98,"ub":0,"uo":0.954,"up":0,"upo":0.945},{"s":"TX","n":6,"d":96,"ub":0,"uo":0.901,"up":0,"upo":0.707},{"s":"TN","n":1,"d":64,"ub":230,"uo":1.0,"up":40,"upo":1.0},{"s":"NY","n":5,"d":61,"ub":0,"uo":0.838,"up":0,"upo":0.813},{"s":"CO","n":2,"d":49,"ub":24,"uo":1.0,"up":3,"upo":0.811},{"s":"MO","n":1,"d":47,"ub":69,"uo":1.0,"up":11,"upo":0.781},{"s":"AZ","n":3,"d":43,"ub":2,"uo":1.0,"up":0,"upo":0.999},{"s":"NC","n":5,"d":42,"ub":0,"uo":0.801,"up":0,"upo":0.721},{"s":"PA","n":2,"d":38,"ub":0,"uo":0.939,"up":0,"upo":0.921},{"s":"IL","n":4,"d":38,"ub":0,"uo":0.954,"up":0,"upo":0.944},{"s":"MA","n":3,"d":36,"ub":0,"uo":0.945,"up":0,"upo":0.943},{"s":"OH","n":2,"d":35,"ub":0,"uo":0.956,"up":0,"upo":0.611},{"s":"VA","n":4,"d":33,"ub":0,"uo":0.876,"up":0,"upo":0.856},{"s":"OR","n":3,"d":29,"ub":0,"uo":0.818,"up":0,"upo":0.816},{"s":"NJ","n":2,"d":28,"ub":0,"uo":0.919,"up":0,"upo":0.751},{"s":"IN","n":2,"d":26,"ub":0,"uo":0.713,"up":0,"upo":0.68},{"s":"UT","n":3,"d":25,"ub":0,"uo":0.956,"up":0,"upo":0.887},{"s":"WI","n":2,"d":24,"ub":0,"uo":0.939,"up":0,"upo":0.914},{"s":"MI","n":3,"d":24,"ub":0,"uo":0.96,"up":0,"upo":0.957},{"s":"SC","n":2,"d":23,"ub":0,"uo":0.887,"up":0,"upo":0.828},{"s":"MD","n":1,"d":23,"ub":0,"uo":0.933,"up":0,"upo":0.933},{"s":"WA","n":3,"d":16,"ub":0,"uo":0.829,"up":0,"upo":0.822},{"s":"KS","n":1,"d":16,"ub":0,"uo":1.0,"up":0,"upo":0.849},{"s":"KY","n":1,"d":15,"ub":7,"uo":1.0,"up":2,"upo":1.0},{"s":"WV","n":1,"d":12,"ub":9,"uo":1.0,"up":2,"upo":0.992},{"s":"NM","n":2,"d":12,"ub":0,"uo":1.0,"up":0,"upo":0.996},{"s":"ME","n":2,"d":11,"ub":17,"uo":1.0,"up":3,"upo":0.963},{"s":"NV","n":1,"d":11,"ub":21,"uo":1.0,"up":21,"upo":1.0},{"s":"IA","n":2,"d":10,"ub":0,"uo":0.901,"up":0,"upo":0.9},{"s":"MT","n":1,"d":6,"ub":0,"uo":0.929,"up":0,"upo":0.924},{"s":"NE","n":1,"d":6,"ub":1,"uo":1.0,"up":1,"upo":1.0},{"s":"DC","n":1,"d":6,"ub":1,"uo":1.0,"up":1,"upo":1.0}];
+const STRESS = [
+  ['Forecast','84','81%','TN 40, NV 21, MO 11','Hamilton +5, Bassett +5 ×2, Cox +5'],
+  ['+20%','394','89%','CA 93, TN 65, AZ 38, NV 38, FL 24','CA hire (93), Bassett +5, Hamilton +5, FL hire (36), Seldeen IVCs off in TX (29 → CA, KY)'],
+  ['+40%','1,502','95%','CA 376, FL 194, AZ 130, TN 115','FL hire, CA hire ×2, AZ hire, then incumbents\' hours'],
+];
+function utilColor(u) { return u>0.95?'var(--unmet)':u>0.9?'var(--hot)':u>0.8?'var(--warn)':'var(--ok)'; }
+function renderReal() {
+  const el = document.getElementById('realView');
+  const maxU = 230;
+  const rows = REAL.filter(r => r.ub>0 || r.upo>0.9).sort((a,b)=> (b.ub - a.ub) || (b.upo - a.upo));
+  el.innerHTML = `<div class="real">
+    <div><h3>Unmet new-client hours, Oct–Jan (grey = no plan, red = Sep 4 plan)</h3>
+      <div class="bars">
+        <div class="brow small"><span></span><span>no plan</span><span>with plan</span><span>Nov util</span></div>
+        ${rows.map(r => `<div class="brow"><b>${r.s}</b>
+          <div><div class="b base" style="width:${Math.max(2, r.ub/maxU*100)}%"></div><span class="small">${r.ub}</span></div>
+          <div><div class="b plan" style="width:${Math.max(2, r.up/maxU*100)}%"></div><span class="small">${r.up}</span></div>
+          <div class="chip" style="background:${utilColor(r.upo)}">${Math.round(r.upo*100)}%</div></div>`).join('')}
+      </div>
+      <p class="small" style="margin-top:8px">Only states with unmet hours or November pool utilization above 90% are shown. Total unmet: 382 without the plan, 84 with it.</p>
+    </div>
+    <div><h3>What a sales increase does (Sep 4 plan on, demand raised from October)</h3>
+      <table class="stress"><tr><th>Demand</th><th>Unmet Oct–Jan</th><th>Nov util</th><th>Where</th><th>First levers</th></tr>
+      ${STRESS.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</table>
+      <h3 style="margin-top:16px">Lever ladder (cheapest first; ties break cheaper)</h3>
+      <ol class="small" style="margin:0; padding-left:18px; line-height:1.6">
+        <li>Turn IVCs on or off for a clinician in a state (free, immediate)</li>
+        <li>Add paid hours to an incumbent</li>
+        <li>Cross-license an incumbent with free hours (live ~Dec)</li>
+        <li>Hire in the state (15 hrs/wk, Nov start)</li>
+      </ol>
+    </div></div>`;
+}
+function renderMonths() {
+  const el = document.getElementById('monthsView');
+  // illustrative Kentucky-like single-clinician state across months, with 70% carry
+  const cap = 115, com = [60,62,66,60,56], dem = [35,45,60,42,36];
+  let carry = 0; const cols = [];
+  ['Sep','Oct','Nov','Dec','Jan'].forEach((m,i) => {
+    const d = dem[i] + carry; const free = cap - com[i]; const placed = Math.min(d, free); const unmet = d - placed; carry = unmet*0.7;
+    cols.push({m, com:com[i], placed, unmet, d});
+  });
+  el.innerHTML = `<h3 style="margin:6px 0 2px; font-size:14px">One sole-clinician state across the horizon (illustrative)</h3>
+  <p class="small" style="margin:0 0 6px">Column = clinician capacity ${cap} hrs. Dark = existing clients, blue = new clients placed, striped = unmet (arrives as demand next month at 70%).</p>
+  <div class="months">${cols.map(c=>`<div class="mo"><div class="col">
+      <div class="c" style="height:${c.com/cap*100}%"></div>
+      <div class="n" style="bottom:${c.com/cap*100}%; height:${c.placed/cap*100}%"></div>
+      <div class="u" style="height:${Math.min(100-(c.com+c.placed)/cap*100, c.unmet/cap*100)}%"></div>
+    </div><div class="cap"><b>${c.m}</b><br>demand ${Math.round(c.d)} · placed ${Math.round(c.placed)}<br><span style="color:var(--unmet)">unmet ${Math.round(c.unmet)}</span></div></div>`).join('')}</div>
+  <p class="carry">Unmet Oct–Jan for this state = ${Math.round(cols.slice(1).reduce((a,c)=>a+c.unmet,0))} hrs. A 15 hr/wk hire adds ≈55 hrs/mo of free capacity and clears it.</p>`;
+}
+
+// ---------- Compare table for levers ----------
+function renderCmp() {
+  const base = simulate({seldeenTX:false,seldeenCA:false,seldeenHrs:false,hireKY:false});
+  const now = simulate(levers);
+  const rows = ST.map((s,i) => {
+    const b = base.states[i].unmet, n = now.states[i].unmet; const dlt = n-b;
+    return `<tr><td>${s.name} unmet</td><td>${Math.round(b)}</td><td>${Math.round(n)}</td><td class="${dlt>0.5?'up':dlt<-0.5?'down':''}">${dlt>0.5?'+':''}${Math.round(dlt)}</td></tr>`;
+  }).join('');
+  const bt = base.states.reduce((a,s)=>a+s.unmet,0), nt = now.states.reduce((a,s)=>a+s.unmet,0);
+  document.getElementById('cmp').innerHTML = `<table class="cmp"><tr><th></th><th>before</th><th>after</th><th>Δ</th></tr>${rows}
+    <tr><td><b>Network total</b></td><td><b>${Math.round(bt)}</b></td><td><b>${Math.round(nt)}</b></td><td class="${nt-bt>0.5?'up':nt-bt<-0.5?'down':''}"><b>${nt-bt>0.5?'+':''}${Math.round(nt-bt)}</b></td></tr></table>`;
+}
+
+// ---------- Controller ----------
+let step = 0;
+function show(i) {
+  step = Math.max(0, Math.min(steps.length-1, i));
+  const s = steps[step];
+  document.getElementById('stepnum').textContent = `Step ${step+1} of ${steps.length}`;
+  document.getElementById('panelBody').innerHTML = `<h2>${s.title}</h2>${s.body}`;
+  document.getElementById('diagram').classList.toggle('hidden', s.view!=='toy');
+  document.getElementById('monthsView').classList.toggle('hidden', s.view!=='months');
+  document.getElementById('realView').classList.toggle('hidden', s.view!=='real');
+  if (s.view==='toy') {
+    if (!s.opts.levers) Object.keys(levers).forEach(k=>levers[k]=false);
+    draw(s.opts);
+    if (s.opts.levers) {
+      document.querySelectorAll('.lever input').forEach(inp => {
+        inp.checked = levers[inp.dataset.l];
+        inp.addEventListener('change', () => { levers[inp.dataset.l] = inp.checked; draw(s.opts); renderCmp(); });
+      });
+      renderCmp();
+    }
+  } else if (s.view==='months') renderMonths();
+  else renderReal();
+  document.getElementById('prev').disabled = step===0;
+  document.getElementById('next').disabled = step===steps.length-1;
+  document.querySelectorAll('#dots span').forEach((d,j)=>d.classList.toggle('on', j===step));
+}
+document.getElementById('prev').onclick = ()=>show(step-1);
+document.getElementById('next').onclick = ()=>show(step+1);
+document.getElementById('dots').innerHTML = steps.map((_,j)=>`<span data-i="${j}"></span>`).join('');
+document.querySelectorAll('#dots span').forEach(d=>d.onclick=()=>show(+d.dataset.i));
+document.addEventListener('keydown', e => { if (e.key==='ArrowRight') show(step+1); if (e.key==='ArrowLeft') show(step-1); });
+renderBase(); show(0);
+</script>
+</body>
+</html>
