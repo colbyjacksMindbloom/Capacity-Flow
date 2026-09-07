@@ -85,10 +85,10 @@ ol.ladder { margin:6px 0 0; padding-left:20px; font-size:13px; line-height:1.6; 
 <header>
   <div>
     <h1>How the Clinician Capacity Flow Model works</h1>
-    <p>Two questions, tracked separately for every state: are new clients being turned away (<b>short</b>), and how long do they wait (<b>buffer</b>). Everything below is the real network as of <span id="asof"></span>, clinicians shown by initials.</p>
+    <p>Two questions, tracked separately for every state: is the wait growing (<b>short</b>: more new clients each month than the clinicians taking them can see), and how long is it (<b>buffer</b>). Everything below is the real network as of <span id="asof"></span>, clinicians shown by initials.</p>
   </div>
   <div class="kpis">
-    <div class="kpi short"><b id="kpiShort"></b><span>hrs/wk short today: least to add so nobody is turned away</span></div>
+    <div class="kpi short"><b id="kpiShort"></b><span>hrs/wk short today: least to add so the wait stops growing (demand fits capacity every month)</span></div>
     <div class="kpi buffer"><b id="kpiBuffer"></b><span>hrs/wk for buffer today: to hold a 4.3-day median IVC (80% util)</span></div>
     <div class="kpi"><b id="kpiPlan"></b><span>hrs/wk in planned changes (Scenarios, Enabled = TRUE)</span></div>
   </div>
@@ -175,10 +175,10 @@ const steps = [
   },
   panel: `<p>Ops does not assign new clients; clients take the soonest open slot. The model routes each state's new-client hours to the clinicians who are taking new clients there (<b>IVC on</b>), in proportion to free hours. A clinician with no free hours takes nobody.</p>
   <div class="rule"><b>Pool utilization</b> = hours used ÷ hours of every clinician taking new clients in the state. It is what a new client experiences. 80% is roughly today's 4.3-day median wait; 100% means every one of them is full.</div>
-  <p>Texas has slack this month and every new client is placed. That is a zero in the "unmet" column and an 88% pool, which already means about a 4.7-day median wait.</p>` },
+  <p>Texas has slack this month and every new client can be seen inside the month. That is a zero in the "unmet" column and an 88% pool, which already means about a 4.7-day median wait.</p>` },
 
 // ---------------- 4. pool full -> unmet ----------------
-{ title: 'When the pool is full: unmet hours and the 15-day cliff',
+{ title: 'When the pool is full: the wait compounds',
   stage() {
     const c = D.tn_clin[PEAK]; const st = D.tn_state[PEAK];
     let h = `<h3>Tennessee, ${L[PEAK]}: one clinician (${c.ini}), ${fmt1(st.demand_new)} new-client hours want in</h3>`;
@@ -196,8 +196,8 @@ const steps = [
     h += `<div class="legend"><span><i style="background:var(--committed)"></i>existing</span><span><i style="background:var(--new)"></i>new placed</span><span><i style="background:repeating-linear-gradient(45deg,#f7c4bf 0 4px,#fbe3e0 4px 8px)"></i>unmet (no clinician)</span></div>`;
     return h;
   },
-  panel: `<p>Tennessee has one clinician taking new clients. Her month is already full of existing clients, so new-client hours have nowhere to go. Those hours are <b>unmet</b>: 70% try again next month and add to that month's demand; 30% are lost at the 15-day cliff, where consult completion drops from 87% to 64%.</p>
-  <div class="rule"><b>Unmet is measured at monthly grain.</b> Zero unmet means every new client found a slot inside the month: 100% coverage, no buffer, and nothing said about how many days they waited. Wait time is the next step.</div>
+  panel: `<p>Tennessee has one clinician taking new clients. Her month is already full of existing clients, so this month's new clients see their soonest slot next month. Those hours are <b>unmet</b>: nobody is refused, but 70% roll into next month's demand and the wait grows; 30% abandon, which is the 15-day cliff (consult completion 87% → 64% past it).</p>
+  <div class="rule"><b>Unmet is measured at monthly grain.</b> Zero unmet means every new client could be seen inside the month, so the wait is not growing. It says nothing about how long the wait is (5 days and 25 days are both "inside the month"). Wait length is the next step.</div>
   <p>The right-hand strip shows the planned Tennessee hire (15 hrs/wk from ${L[MO[2]]}). October is still short because the hire has not started; that is the "months still short after plan" column on the Heatmap.</p>` },
 
 // ---------------- 5. multi-state + IVC lever ----------------
@@ -228,7 +228,7 @@ const steps = [
   } },
 
 // ---------------- 6. short vs buffer ----------------
-{ title: 'Two thresholds: short and buffer',
+{ title: 'Two thresholds: is the wait growing, and how long is it',
   stage() {
     // wait curve
     const W = 760, H = 300, pad = {l:50, r:20, t:16, b:40};
@@ -246,13 +246,13 @@ const steps = [
     svg += `</svg>`;
     let h = `<h3>Median days to IVC vs pool utilization (fit on 20 months). Labels: hrs/wk of in-state additions needed today to hold that wait everywhere.</h3><div class="curve">${svg}</div>`;
     h += `<div class="stepgrid" style="margin-top:14px">
-      <div class="box"><h3 style="color:var(--unmet)">SHORT · ${overall.short} hrs/wk today</h3><div class="small">Least to add so unmet is under 1 hour in every month of the window. Pools may sit at 100%. Wait ≈ 5.3 days where they do.</div></div>
+      <div class="box"><h3 style="color:var(--unmet)">SHORT · ${overall.short} hrs/wk today</h3><div class="small">Least to add so demand fits inside capacity in every month (unmet under 1 hour): the wait stops growing. Pools may still sit at 100%, where the wait is about 5.3 days.</div></div>
       <div class="box"><h3 style="color:var(--buffer)">BUFFER · ${overall.buffer} hrs/wk today</h3><div class="small">Add enough that no pool exceeds 80% in any month: holds today's 4.3-day median. Covers no-shows and late cancels (${D.noshow.no_show_late_cancel_pct}% of delivered hours), reschedules (${D.noshow.reschedule_pct}%), check-ins, and demand a little above forecast.</div></div>
     </div>`;
     return h;
   },
-  panel: `<p>The same state can be fine on one threshold and failing on the other. Texas turns nobody away, so it is not short. Its pool is 88% full in ${L[PEAK]}, so it needs 20 hrs/wk to hold a 4.3-day wait, so it is on the buffer list.</p>
-  <div class="rule"><b>Do the planned changes reach a target or hold the status quo?</b> Status quo, partly. They remove most of "short" (${overall.short} → ${overall.pshort} hrs/wk) and about a sixth of "buffer" (${overall.buffer} → ${D.targets['4.3'].plan}). National median in ${L[PEAK]} goes from about ${D.wait.OVERALL.today[MO.indexOf(PEAK)]} days with no changes back to about ${D.wait.OVERALL.plan[MO.indexOf(PEAK)]}, which is where it is today.</div>
+  panel: `<p>The same state can be fine on one threshold and failing on the other. Texas can see every new client inside the month, so it is not short. Its pool is 88% full in ${L[PEAK]}, so it needs 20 hrs/wk to hold a 4.3-day wait, so it is on the buffer list.</p>
+  <div class="rule"><b>Do the planned changes reach a target or hold the status quo?</b> Status quo, partly. They remove most of "short" (waits stop compounding in TN, MO, CO) (${overall.short} → ${overall.pshort} hrs/wk) and about a sixth of "buffer" (${overall.buffer} → ${D.targets['4.3'].plan}). National median in ${L[PEAK]} goes from about ${D.wait.OVERALL.today[MO.indexOf(PEAK)]} days with no changes back to about ${D.wait.OVERALL.plan[MO.indexOf(PEAK)]}, which is where it is today.</div>
   <p>Reaching 4.0 days would take about ${D.targets['4.0'].plan} more hrs/wk on top of the plan; 3.0 days about ${D.targets['3.0'].plan}, which is not a hiring plan. The target is one input; change it and the buffer column re-computes.</p>` },
 
 // ---------------- 7. the network today ----------------
@@ -274,7 +274,7 @@ const steps = [
     return h;
   },
   panel: `<p>Every state, sorted worst first. Status is on today's roster; the red bars and the second status column are after the planned changes (${D.planned_changes}).</p>
-  <div class="rule"><b>Reading it.</b> SHORT = clients turned away in the window. TIGHT = pool over 95% some month, waits forming. WATCH = over 90%. The last column is not the model: it is what the warehouse shows today, open calendar hours in the pool next week and how far out booked IVCs sit. Where the model says SHORT the calendars show zero open hours (TN, MO, NV, ME, KS) and IVCs booked 6 to 10 days out.</div>
+  <div class="rule"><b>Reading it.</b> SHORT = new-client demand exceeds the pool's capacity in some month, so the wait compounds month over month. TIGHT = pool over 95% some month, waits forming. WATCH = over 90%. The last column is not the model: it is what the warehouse shows today, open calendar hours in the pool next week and how far out booked IVCs sit. Where the model says SHORT the calendars show zero open hours (TN, MO, NV, ME, KS) and IVCs booked 6 to 10 days out.</div>
   <p>Planning window = the next four full months. Totals roll forward with the as-of date.</p>` },
 
 // ---------------- 8. what to do ----------------
@@ -282,7 +282,7 @@ const steps = [
   stage() {
     const tbl = (title, rows) => `<div class="box"><h3>${title}</h3><table class="cmp"><tr><th>#</th><th style="text-align:left">Lever</th><th>Removes (hrs)</th><th>Left after</th></tr>` +
       rows.map(r => `<tr><td>${r.step}</td><td style="text-align:left">${r.lever}</td><td>${fmt1(r.gain)}</td><td>${fmt1(r.after)}</td></tr>`).join('') + `</table></div>`;
-    let h = `<div class="stepgrid">${tbl('Today\'s roster: cheapest sequence to stop turning clients away', D.greedy0)}${tbl('After planned changes: what is still needed', D.greedy_plan)}</div>`;
+    let h = `<div class="stepgrid">${tbl('Today\'s roster: cheapest sequence to stop the wait from growing', D.greedy0)}${tbl('After planned changes: what is still needed', D.greedy_plan)}</div>`;
     h += `<div class="box" style="margin-top:14px"><h3>If sales run above forecast (planned changes on)</h3><table class="cmp"><tr><th style="text-align:left">Demand</th><th>Unmet hrs, window</th><th>${L[PEAK]} util</th><th style="text-align:left">States short</th></tr>` +
       D.stress.map(s => `<tr><td style="text-align:left">${s.demand}</td><td>${fmt1(s.unmet)}</td><td>${pct(+s.util)}</td><td style="text-align:left;white-space:normal">${s.states}</td></tr>`).join('') + `</table>
       <div class="small" style="margin-top:6px">First levers at +20%: ${D.greedy20.slice(0,5).map(g => g.lever + ' (' + fmt1(g.gain) + ')').join('; ')}.</div></div>`;
@@ -291,7 +291,7 @@ const steps = [
     return h;
   },
   panel: `<p>Levers are ranked by unmet hours removed across the whole network, ties broken toward the cheaper tier: IVC on/off (free, immediate) → add hours → cross-license (weeks to months) → hire.</p>
-  <div class="rule"><b>At forecast</b>, the shortfall is in sole-clinician states and incumbents' hours or a single in-state hire clears it. <b>At +20%</b>, the big pooled states (California, Arizona, Florida) run out of room and those are hires. Nevada is short today and nothing in the planned changes touches it.</div>
+  <div class="rule"><b>At forecast</b>, the compounding waits are in sole-clinician states and incumbents' hours or a single in-state hire clears it. <b>At +20%</b>, the big pooled states (California, Arizona, Florida) run out of room and those are hires. Nevada is short today and nothing in the planned changes touches it.</div>
   <p>Two roster facts change these numbers by half and are being checked: one clinician's roster FTE drops in ${L[MO[2]]} while her released calendar does not (Tennessee), and one clinician is carried at 0.8 FTE with no calendar released (Florida, New York, Virginia, Illinois).</p>` },
 ];
 
